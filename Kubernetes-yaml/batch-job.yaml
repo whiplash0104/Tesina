@@ -1,0 +1,14 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: batch-job
+  namespace: demo-app
+spec:
+  template:
+    spec:
+      containers:
+      - name: batch
+        image: busybox
+        command: ["sh", "-c", "echo processing batch && sleep 10"]
+      restartPolicy: Never
+
