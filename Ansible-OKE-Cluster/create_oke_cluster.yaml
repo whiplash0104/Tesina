@@ -1,0 +1,132 @@
+- name: Crea Cluster OKE
+  hosts: localhost
+  connection: local
+
+  vars_files: vault.yaml
+
+  vars:
+    node_pool_config_details:
+      size: 1
+      placement_configs:
+        - availability_domain: "{{ ad1 }}"
+        - availability_domain: "{{ ad2 }}"
+        - availability_domain: "{{ ad3 }}"
+
+  tasks:
+    - block:
+        - name: Lista Todas las VCNs
+          oracle.oci.oci_network_vcn_facts:
+             compartment_id: "{{ compartment_ocid }}"
+             display_name: "{{ display_name_vcn }}"
+          register: resultado
+
+        - set_fact:
+            vcns_id: "{{ resultado.vcns[0].id }}"
+
+        - name: Valida Ultima Version de Kubernetes
+          oracle.oci.oci_container_engine_cluster_options_facts:
+            cluster_option_id: all
+          register: resultado
+
+        - set_fact:
+            k8s_version: "{{ resultado.cluster_options.kubernetes_versions[3] }}"
+
+        - name: Lista LB Subnet
+          oracle.oci.oci_network_subnet_facts:
+            compartment_id: "{{ compartment_ocid }}"
+            display_name: "{{ lb_subnet1_name }}" 
+          register: resultado
+
+        - set_fact:
+            lb_subnet1_id: "{{ resultado.subnets[0].id }}"
+
+        - name: Lista LB Subnet
+          oracle.oci.oci_network_subnet_facts:
+            compartment_id: "{{ compartment_ocid }}"
+            display_name: "{{ subnet1_name }}"
+          register: resultado
+
+        - set_fact:
+            lb_subnet2_id: "{{ resultado.subnets[0].id }}"
+
+
+        - name: Crea Cluster OKE 
+          oracle.oci.oci_container_engine_cluster:
+            compartment_id: "{{ compartment_ocid }}"
+            name: "{{ cluster_name }}"
+            vcn_id: "{{ vcns_id }}"
+            kubernetes_version: "{{ k8s_version }}"
+            options:
+              service_lb_subnet_ids:
+                - "{{ lb_subnet1_id }}"
+                - "{{ lb_subnet2_id }}"
+          register: resultado
+
+        - set_fact:
+            cluster_id: "{{resultado.cluster.id }}"
+
+        - name: Lista Shapes de VM
+          oracle.oci.oci_container_engine_node_pool_options_facts:
+            id: "{{ cluster_id }}"
+          register: resultado
+
+        - set_fact:
+            node_shape: "{{ item }}"
+          loop: "{{ resultado.node_pool_options.shapes }}"
+          when: 
+            - '"VM.Standard" in item'
+        
+        - set_fact:
+            node_pool_source_details:
+              source_type: "IMAGE"
+              image_id: "{{ item.image_id }}"
+          loop: "{{ resultado.node_pool_options.sources }}"
+          when: 
+            - item.source_name.find("7.6") == -1
+            - item.source_name.find("aarch64") == -1
+        
+        - name: Lista Subnets
+          oracle.oci.oci_network_subnet_facts:
+            compartment_id: "{{ compartment_ocid }}"
+            display_name: "{{ subnet1_name }}"
+          register: resultado
+
+        - set_fact:
+           ad1_subnet_id: "{{ resultado.subnets[0].id }}"
+
+        - name: Lista Subnets
+          oracle.oci.oci_network_subnet_facts:
+            compartment_id: "{{ compartment_ocid }}"
+            display_name: "{{ subnet2_name }}"
+          register: resultado
+
+        - set_fact:
+           ad2_subnet_id: "{{ resultado.subnets[0].id }}"
+
+        - name: Lista Subnets
+          oracle.oci.oci_network_subnet_facts:
+            compartment_id: "{{ compartment_ocid }}"
+            display_name: "{{ subnet3_name }}"
+          register: resultado
+
+        - set_fact:
+           ad3_subnet_id: "{{ resultado.subnets[0].id }}"
+
+
+        - name: Crea Node Pool
+          oracle.oci.oci_container_engine_node_pool:
+            cluster_id: "{{ cluster_id }}"
+            compartment_id: "{{ compartment_ocid }}"
+            name: "{{ node_pool_name }}"
+            kubernetes_version: "{{ k8s_version }}"
+            node_source_details: "{{ node_pool_source_details }}"
+            node_shape: "{{ node_shape }}"
+            node_config_details: "{{ node_pool_config_details }}"
+          register: resultado
+
+        - set_fact:
+            node_pool_id: "{{ resultado.node_pool.id }}"
+
+      rescue:
+      - fail:
+          msg: "ERROR, No se logro Crear Cluster OKE"
