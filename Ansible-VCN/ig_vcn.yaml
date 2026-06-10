@@ -1,0 +1,36 @@
+- name: Crea Internet Gateway
+  hosts: localhost
+  connection: local
+
+  vars_files: vault.yaml
+
+  tasks:
+    - block:
+        - name: Lista Todas las VCNs
+          oracle.oci.oci_network_vcn_facts:
+             compartment_id: "{{ compartment_ocid }}"
+             display_name: "{{ display_name }}"
+          register: resultado
+
+        - name: Valida si Existe la VCN
+          assert:
+             that:
+                - resultado.vcns[0].display_name == display_name
+
+        - set_fact:
+             vcns_id: "{{ resultado.vcns[0].id }}"
+
+        - name: Crea Internet Gateway 
+          oracle.oci.oci_network_internet_gateway:
+            compartment_id: "{{ compartment_ocid }}"
+            vcn_id: "{{ vcns_id }}"
+            name: "{{ ig_name }}"
+            is_enabled: true
+
+        - name: Valida Creacion de Internet Gateway
+          assert:
+             that:
+      rescue:
+
+        - fail:
+            msg: "ERROR, No se Logro Crear Internet Gateway."

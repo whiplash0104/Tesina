@@ -1,0 +1,37 @@
+- name: Elimina VCN
+  hosts: localhost
+  connection: local
+
+  vars_files: vault.yaml
+
+  tasks:
+    - block:
+        - name: Lista Todas las VCNs
+          oracle.oci.oci_network_vcn_facts:
+             compartment_id: "{{ compartment_ocid }}"
+             display_name: "{{ display_name }}"
+          register: resultado
+
+        - name: Valida si Existe la VCN
+          assert:
+             that:
+                - resultado.vcns[0].display_name == display_name
+
+        - set_fact:
+             vcns_id: "{{ resultado.vcns[0].id }}"
+
+        - name: Elimina VCN
+          oracle.oci.oci_network_vcn:
+             vcn_id: "{{ vcns_id }}"
+             state: 'absent'
+          register: resultado
+
+        - name: Valida que la VCN se Elimino
+          assert:
+             that:
+               - resultado.changed == True
+               - resultado.vcn.display_name == display_name
+      rescue:
+
+        - fail:
+            msg: "ERROR, No se logro Eliminar VCN."

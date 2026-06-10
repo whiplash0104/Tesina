@@ -1,0 +1,49 @@
+- name: Crea Subnet 
+  hosts: localhost
+  connection: local
+
+  vars_files: vault.yaml
+
+  tasks:
+    - block:
+        - name: Lista Todas las VCNs
+          oracle.oci.oci_network_vcn_facts:
+             compartment_id: "{{ compartment_ocid }}"
+             display_name: "{{ display_name }}"
+          register: resultado
+
+        - name: Valida si Existe la VCN
+          assert:
+             that:
+                - resultado.vcns[0].display_name == display_name
+
+        - set_fact:
+             vcns_id: "{{ resultado.vcns[0].id }}"
+
+        - name: Crea Subnets
+          oracle.oci.oci_network_subnet:
+            availability_domain: "{{ item.ad }}"
+            cidr_block: "{{ item.cidr }}"
+            compartment_id: "{{ compartment_ocid }}"
+            display_name: "{{ item.subnet_name }}"
+            vcn_id: '{{ vcns_id }}'
+          loop:
+            - { ad: '{{ ad1 }}', cidr: '{{ subnet1_cidr }}', subnet_name: '{{ subnet1_name }}' }
+            - { ad: '{{ ad2 }}', cidr: '{{ subnet2_cidr }}', subnet_name: '{{ subnet2_name }}' }
+            - { ad: '{{ ad3 }}', cidr: '{{ subnet3_cidr }}', subnet_name: '{{ subnet3_name }}' }
+          register: result
+        - debug:
+            msg: "{{ result }}"
+        - set_fact:
+            ad1_subnet_id: "{{ result.results[0].subnet.id }}"
+            ad2_subnet_id: "{{ result.results[1].subnet.id }}"
+            ad3_subnet_id: "{{ result.results[2].subnet.id }}"
+
+
+        - name: Valida Creacion de Subnets
+          assert:
+             that:
+      rescue:
+
+        - fail:
+            msg: "ERROR, No se Logro Crear Subnets."

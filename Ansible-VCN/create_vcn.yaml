@@ -1,0 +1,26 @@
+- name: Crea VCN
+  hosts: localhost
+  connection: local
+
+  vars_files: vault.yaml
+
+  tasks:
+    - block:
+        - name: Crea VCN
+          oracle.oci.oci_network_vcn:
+            compartment_id: "{{ compartment_ocid }}"
+            display_name: "{{ display_name }}"
+            dns_label: " {{ vcn_dns_label }}"
+            cidr_block: "{{ vcn_cidr_block }}"
+          register: resultado
+
+        - set_fact:
+             vcn_id: "{{ resultado.vcn.id }}"
+
+        - assert:
+            that:
+              - resultado.vcn.lifecycle_state == "AVAILABLE"
+      rescue:
+
+        - fail:
+            msg: "ERROR, No se logro Crear VNC"

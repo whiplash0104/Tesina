@@ -1,0 +1,92 @@
+- name: Crea Internet Gateway, Reglas de Ingress y Egress, SL y LB, Subnet LB
+  hosts: localhost
+  connection: local
+
+  vars_files: vault.yaml
+
+  tasks:
+    - block:
+        - name: Lista Todas las VCNs
+          oracle.oci.oci_network_vcn_facts:
+             compartment_id: "{{ compartment_ocid }}"
+             display_name: "{{ display_name }}"
+          register: resultado
+
+        - name: Valida si Existe la VCN
+          assert:
+             that:
+                - resultado.vcns[0].display_name == display_name
+
+        - set_fact:
+             sl_id: "{{ resultado.vcns[0].default_security_list_id }}"
+
+        - set_fact:
+             vcns_id: "{{ resultado.vcns[0].id }}"
+
+        - name: Copia Template de Ingress a /tmp
+          template: src=./templates/ingress_security_rules.yaml.j2 dest=/tmp/ingress_security_rules.yaml
+        
+        - name: Copia Template de Egress a /tmp
+          template: src=./templates/egress_security_rules.yaml.j2 dest=/tmp/egress_security_rules.yaml
+        
+        - name: Carga Variables Ingress
+          include_vars:
+            file: /tmp/ingress_security_rules.yaml
+            name: loaded_ingress
+        
+        - name: Imprime loaded_ingress
+          debug:
+            msg: "Variables de Ingress Cargadas {{loaded_ingress}}"
+        
+        - name: Carga Variables Egress
+          include_vars:
+            file: /tmp/egress_security_rules.yaml
+            name: loaded_egress
+
+        - name: Imprime loaded_egress
+          debug:
+            msg: "Variables de Egress Cargadas {{loaded_egress}}"
+        
+        - name: Agrega Reglas en Default Security List 
+          oracle.oci.oci_network_security_list:
+            id: "{{ sl_id }}"
+            ingress_security_rules: "{{ loaded_ingress.ingress_security_rules_for_default_sec_list }}"
+            egress_security_rules:  "{{ loaded_egress.egress_security_rules_for_default_sec_list }}"
+            purge_security_rules: 'no'
+          register: resultado
+
+        - debug:
+            msg: "{{ resultado }}"
+
+        - name: Crea Security List Para Load Balancers
+          oracle.oci.oci_network_security_list:
+            name: "Load Balancers"
+            compartment_id: "{{ compartment_ocid }}"
+            vcn_id: "{{ vcns_id }}"
+            ingress_security_rules: "{{ loaded_ingress.ingress_security_rules_for_lb }}"
+            egress_security_rules: "{{ loaded_egress.egress_security_rules_for_lb }}"
+          register: resultado
+
+        - set_fact:
+            lb_sec_list_id: "{{ resultado.security_list.id }}"
+
+
+        - name: Crea Subnet Para Load Balancer en AD1 y AD2
+          oracle.oci.oci_network_subnet:
+            name: "{{ item.name }}"
+            availability_domain: "{{ item.ad }}"
+            compartment_id: "{{ compartment_ocid }}"
+            cidr_block: "{{ item.cidr }}"
+            vcn_id: "{{ vcns_id }}"
+            security_list_ids:
+              - "{{ lb_sec_list_id }}"
+          loop:
+            - { name: '{{ lb_subnet1_name }}', ad: '{{ ad1 }}', cidr: '{{ lb_subnet1_cidr }}' }
+            - { name: '{{ lb_subnet2_name }}', ad: '{{ ad2 }}', cidr: '{{ lb_subnet2_cidr }}' }
+          register: result
+        - debug:
+            msg: "{{ resultado }}"
+
+      rescue:
+        - fail:
+            msg: "ERROR, No se Logro Crear Reglas."
